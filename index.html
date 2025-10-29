@@ -33,7 +33,7 @@
         
         // ⚠️ IMPORTANTE: Configure esta URL após criar o Google Apps Script
         // Instruções no arquivo INSTRUCOES_CONFIGURACAO.txt
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbztgJH4p-nOyvftcgFWKlek7aUyIaeYyGd7R1piHvIUMrt-vGbgwPHUVQx2saYnW6lT/exec';
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyOiT9Nb2WJtA0BSVu-1386Rc69itMlN4rkZYA6TyO1HCaWMUCNUyZfZAOYsVgbsNcT/exec';
         const USE_GOOGLE_SHEETS = true; // Mude para true após configurar
         
         const Plus = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
@@ -53,6 +53,7 @@
         const AlertTriangle = ({size = 20}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>;
         const Edit = ({size = 20}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
         const Calendar = ({size = 20}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
+        const Trash = ({size = 20}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>;
 
         function TravelControl() {
           const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -131,7 +132,7 @@
             }
           };
 
-          // Integração Google Sheets
+          // ⚠️ CORREÇÃO PRINCIPAL: Integração Google Sheets SEM no-cors
           const chamarGoogleSheets = async (action, dados) => {
             if (!USE_GOOGLE_SHEETS) {
               console.log('Google Sheets desabilitado - salvando localmente');
@@ -140,19 +141,30 @@
 
             try {
               setCarregando(true);
+              
+              // ✅ REMOVIDO mode: 'no-cors' para permitir leitura da resposta
               const response = await fetch(SCRIPT_URL, {
                 method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                  'Content-Type': 'application/json'
+                },
                 body: JSON.stringify({ action, ...dados })
               });
               
-              // No-cors não permite ler a resposta, assume sucesso
-              return { success: true };
+              // ✅ Agora podemos ler a resposta
+              const result = await response.json();
+              
+              if (!result.success) {
+                console.error('Erro do servidor:', result.error);
+                mostrarMensagem(result.error || 'Erro ao processar no Google Sheets', 'error');
+                return { success: false, error: result.error };
+              }
+              
+              return result;
             } catch (error) {
               console.error('Erro ao conectar Google Sheets:', error);
-              mostrarMensagem('Erro ao conectar com Google Sheets', 'error');
-              return { success: false };
+              mostrarMensagem('Erro ao conectar com Google Sheets. Verifique a URL.', 'error');
+              return { success: false, error: error.toString() };
             } finally {
               setCarregando(false);
             }
@@ -179,12 +191,14 @@
                 setMotoristas(data.dados.motoristas.length > 0 ? data.dados.motoristas : motoristas);
                 setVeiculos(data.dados.veiculos.length > 0 ? data.dados.veiculos : veiculos);
                 setDespesas(data.dados.despesas.length > 0 ? data.dados.despesas : despesas);
-                mostrarMensagem('Dados carregados do Google Sheets!', 'success');
+                mostrarMensagem('✅ Dados carregados do Google Sheets!', 'success');
+              } else {
+                throw new Error(data.error || 'Erro ao carregar dados');
               }
             } catch (error) {
               console.error('Erro ao carregar do Sheets:', error);
               carregarDadosLocal();
-              mostrarMensagem('Carregado localmente (offline)', 'warning');
+              mostrarMensagem('⚠️ Carregado localmente (erro ao conectar)', 'warning');
             } finally {
               setCarregandoDados(false);
             }
@@ -338,8 +352,10 @@
             setNovoClienteTemp('');
             setShowAddCliente(false);
             
-            await chamarGoogleSheets('salvarItem', { tipo: 'cliente', item: novo });
-            mostrarMensagem('Cliente adicionado!', 'success');
+            const result = await chamarGoogleSheets('salvarItem', { tipo: 'cliente', item: novo });
+            if (result.success) {
+              mostrarMensagem('✅ Cliente adicionado!', 'success');
+            }
           };
 
           const adicionarMotoristaRapido = async () => {
@@ -360,8 +376,10 @@
             setNovoMotoristaTemp('');
             setShowAddMotorista(false);
             
-            await chamarGoogleSheets('salvarItem', { tipo: 'motorista', item: novo });
-            mostrarMensagem('Motorista adicionado!', 'success');
+            const result = await chamarGoogleSheets('salvarItem', { tipo: 'motorista', item: novo });
+            if (result.success) {
+              mostrarMensagem('✅ Motorista adicionado!', 'success');
+            }
           };
 
           const adicionarVeiculoRapido = async () => {
@@ -382,8 +400,10 @@
             setNovoVeiculoTemp('');
             setShowAddVeiculo(false);
             
-            await chamarGoogleSheets('salvarItem', { tipo: 'veiculo', item: novo });
-            mostrarMensagem('Veículo adicionado!', 'success');
+            const result = await chamarGoogleSheets('salvarItem', { tipo: 'veiculo', item: novo });
+            if (result.success) {
+              mostrarMensagem('✅ Veículo adicionado!', 'success');
+            }
           };
 
           const adicionarCategoriaRapida = async () => {
@@ -404,8 +424,10 @@
             setNovaCategoriaTemp('');
             setShowAddCategoria(false);
             
-            await chamarGoogleSheets('salvarItem', { tipo: 'despesa', item: nova });
-            mostrarMensagem('Categoria adicionada!', 'success');
+            const result = await chamarGoogleSheets('salvarItem', { tipo: 'despesa', item: nova });
+            if (result.success) {
+              mostrarMensagem('✅ Categoria adicionada!', 'success');
+            }
           };
 
           // Despesas
@@ -427,7 +449,7 @@
             setNovaDespesa({ categoria: '', valor: '' });
             setSearchCategoria('');
             setShowAddDespesa(false);
-            mostrarMensagem('Despesa adicionada!', 'success');
+            mostrarMensagem('✅ Despesa adicionada!', 'success');
           };
 
           const removerDespesa = (id) => {
@@ -486,8 +508,12 @@
               };
 
               setViagens(viagens.map(v => v.id === editandoViagem.id ? viagemAtualizada : v));
-              await chamarGoogleSheets('editarViagem', { viagem: viagemAtualizada });
-              mostrarMensagem('✅ Viagem atualizada com sucesso!', 'success');
+              
+              const result = await chamarGoogleSheets('editarViagem', { viagem: viagemAtualizada });
+              if (result.success) {
+                mostrarMensagem('✅ Viagem atualizada com sucesso!', 'success');
+              }
+              
               setEditandoViagem(null);
             } else {
               // Modo nova viagem
@@ -505,8 +531,11 @@
               };
 
               setViagens([viagem, ...viagens]);
-              await chamarGoogleSheets('salvarViagem', { viagem });
-              mostrarMensagem('✅ Viagem registrada com sucesso!', 'success');
+              
+              const result = await chamarGoogleSheets('salvarViagem', { viagem });
+              if (result.success) {
+                mostrarMensagem('✅ Viagem registrada com sucesso!', 'success');
+              }
             }
             
             setNovaViagem({
@@ -540,13 +569,26 @@
             setShowNewTrip(true);
           };
 
-          // Excluir viagem
+          // ✅ CORREÇÃO: Excluir viagem COM confirmação de sincronização
           const excluirViagem = async (id) => {
-            if (!confirm('Tem certeza que deseja excluir esta viagem?')) return;
+            if (!confirm('⚠️ Tem certeza que deseja excluir esta viagem?\n\nEsta ação não pode ser desfeita.')) return;
             
+            // Excluir localmente primeiro
             setViagens(viagens.filter(v => v.id !== id));
-            await chamarGoogleSheets('excluirViagem', { id });
-            mostrarMensagem('Viagem excluída!', 'success');
+            
+            // Tentar excluir do Google Sheets
+            if (USE_GOOGLE_SHEETS) {
+              const result = await chamarGoogleSheets('excluirViagem', { id });
+              
+              if (result.success) {
+                mostrarMensagem('✅ Viagem excluída com sucesso!', 'success');
+              } else {
+                mostrarMensagem('⚠️ Viagem removida localmente, mas erro ao sincronizar com Sheets', 'warning');
+                console.error('Erro ao excluir do Sheets:', result.error);
+              }
+            } else {
+              mostrarMensagem('✅ Viagem excluída!', 'success');
+            }
           };
 
           // Gerenciar itens (cadastros)
@@ -571,8 +613,12 @@
             }
             
             setArr([...arr, item]);
-            await chamarGoogleSheets('salvarItem', { tipo, item });
-            mostrarMensagem('Item adicionado!', 'success');
+            
+            const result = await chamarGoogleSheets('salvarItem', { tipo, item });
+            if (result.success) {
+              mostrarMensagem('✅ Item adicionado!', 'success');
+            }
+            
             setNovoItem('');
           };
 
@@ -604,15 +650,18 @@
 
             setArr(arr.map(i => i === editandoItem ? item : i));
             
-            await chamarGoogleSheets('editarItem', { 
+            const result = await chamarGoogleSheets('editarItem', { 
               tipo: tipoEditando, 
               itemAntigo: editandoItem, 
               itemNovo: item 
             });
             
+            if (result.success) {
+              mostrarMensagem('✅ Item editado!', 'success');
+            }
+            
             setEditandoItem(null);
             setItemEditado('');
-            mostrarMensagem('Item editado!', 'success');
           };
 
           const cancelarEdicao = () => {
@@ -620,9 +669,11 @@
             setItemEditado('');
           };
 
+          // ✅ CORREÇÃO: Remover item COM confirmação de sincronização
           const removerItem = async (item, tipo) => {
-            if (!confirm(`Tem certeza que deseja remover "${item}"?`)) return;
+            if (!confirm(`⚠️ Tem certeza que deseja remover "${item}"?\n\nEsta ação não pode ser desfeita.`)) return;
 
+            // Remover localmente primeiro
             switch(tipo) {
               case 'despesa': setDespesas(despesas.filter(d => d !== item)); break;
               case 'motorista': setMotoristas(motoristas.filter(m => m !== item)); break;
@@ -630,8 +681,19 @@
               case 'cliente': setClientes(clientes.filter(c => c !== item)); break;
             }
             
-            await chamarGoogleSheets('removerItem', { tipo, item });
-            mostrarMensagem('Item removido!', 'success');
+            // Tentar remover do Google Sheets
+            if (USE_GOOGLE_SHEETS) {
+              const result = await chamarGoogleSheets('removerItem', { tipo, item });
+              
+              if (result.success) {
+                mostrarMensagem('✅ Item removido com sucesso!', 'success');
+              } else {
+                mostrarMensagem('⚠️ Item removido localmente, mas erro ao sincronizar com Sheets', 'warning');
+                console.error('Erro ao remover do Sheets:', result.error);
+              }
+            } else {
+              mostrarMensagem('✅ Item removido!', 'success');
+            }
           };
 
           // TELA DE LOGIN
@@ -906,7 +968,7 @@
                                             className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
                                             title="Excluir viagem"
                                           >
-                                            <X size={18} />
+                                            <Trash size={18} />
                                           </button>
                                         </div>
                                       </div>
@@ -919,12 +981,13 @@
                                         <p className="flex items-center gap-1"><Calendar size={14} /> Data Viagem: {v.dataViagem || v.dataRegistro}</p>
                                         <p className="text-xs text-gray-500">📝 Registro: {v.dataRegistro} • {v.horaRegistro}</p>
                                       </div>
+                                      {/* ✅ MÚLTIPLAS DESPESAS - CADA UMA EM SUA PRÓPRIA TAG */}
                                       {v.despesas && v.despesas.length > 0 && (
                                         <div className="mt-3">
-                                          <p className="font-semibold text-sm mb-1">Despesas Adicionais:</p>
+                                          <p className="font-semibold text-sm mb-2">Despesas Adicionais:</p>
                                           <div className="flex flex-wrap gap-2">
                                             {v.despesas.map((d, i) => (
-                                              <span key={i} className="bg-indigo-100 text-indigo-800 px-2 py-1 rounded text-xs">
+                                              <span key={i} className="bg-indigo-100 text-indigo-800 px-3 py-1.5 rounded text-sm font-medium">
                                                 {d.categoria}: R$ {d.valor}
                                               </span>
                                             ))}
@@ -1502,5 +1565,3 @@
     </script>
 </body>
 </html>
-
-
