@@ -33,8 +33,8 @@
         
         // ⚠️ IMPORTANTE: Configure esta URL após criar o Google Apps Script
         // Instruções no arquivo INSTRUCOES_CONFIGURACAO.txt
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxCJPsrbPRZMWgzOmgwOnFs44F3vZLLk98ZKlFb35WKvSYTnRVeBqJJswtngemB4mGN/exec';
-        const USE_GOOGLE_SHEETS = true; // Mude para true após configurar
+        const SCRIPT_URL = 'https://script.google.com/macros/s/SEU_SCRIPT_ID_AQUI/exec';
+        const USE_GOOGLE_SHEETS = false; // Mude para true após configurar
         
         const Plus = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
         const X = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
@@ -51,6 +51,8 @@
         const TrendingUp = ({size = 20}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>;
         const TrendingDown = ({size = 20}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>;
         const AlertTriangle = ({size = 20}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>;
+        const Edit = ({size = 20}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
+        const Calendar = ({size = 20}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
 
         function TravelControl() {
           const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -71,10 +73,11 @@
           
           const [novaViagem, setNovaViagem] = useState({
             cliente: '', motorista: '', veiculo: '', precoLitro: '', litrosAbastecidos: '',
-            distancia: '', bemSucedida: true, despesas: [], valorVenda: ''
+            distancia: '', bemSucedida: true, despesas: [], valorVenda: '', dataViagem: ''
           });
           
           const [viagens, setViagens] = useState([]);
+          const [editandoViagem, setEditandoViagem] = useState(null);
           
           const [showAddCliente, setShowAddCliente] = useState(false);
           const [showAddMotorista, setShowAddMotorista] = useState(false);
@@ -461,39 +464,89 @@
             return (valorVenda - totalDespesas).toFixed(2);
           };
 
-          // Salvar viagem
+          // Salvar ou editar viagem
           const salvarViagem = async () => {
             if (!novaViagem.cliente || !novaViagem.motorista || !novaViagem.veiculo) {
               mostrarMensagem('Preencha Cliente, Motorista e Veículo!', 'error');
               return;
             }
 
-            const viagem = {
-              ...novaViagem,
-              id: Date.now(),
-              data: new Date().toLocaleDateString('pt-BR'),
-              hora: new Date().toLocaleTimeString('pt-BR'),
-              usuario: currentUser,
-              consumo: calcularConsumo(),
-              totalCombustivel: calcularCombustivel(),
-              totalGeral: calcularTotalDespesas(novaViagem),
-              lucro: novaViagem.valorVenda ? calcularLucro(novaViagem) : '0.00'
-            };
+            if (editandoViagem) {
+              // Modo edição
+              const viagemAtualizada = {
+                ...novaViagem,
+                id: editandoViagem.id,
+                dataRegistro: editandoViagem.dataRegistro,
+                horaRegistro: editandoViagem.horaRegistro,
+                usuario: currentUser,
+                consumo: calcularConsumo(),
+                totalCombustivel: calcularCombustivel(),
+                totalGeral: calcularTotalDespesas(novaViagem),
+                lucro: novaViagem.valorVenda ? calcularLucro(novaViagem) : '0.00'
+              };
 
-            setViagens([viagem, ...viagens]);
-            
-            await chamarGoogleSheets('salvarViagem', { viagem });
-            
-            mostrarMensagem('✅ Viagem registrada com sucesso!', 'success');
+              setViagens(viagens.map(v => v.id === editandoViagem.id ? viagemAtualizada : v));
+              await chamarGoogleSheets('editarViagem', { viagem: viagemAtualizada });
+              mostrarMensagem('✅ Viagem atualizada com sucesso!', 'success');
+              setEditandoViagem(null);
+            } else {
+              // Modo nova viagem
+              const viagem = {
+                ...novaViagem,
+                id: Date.now(),
+                dataRegistro: new Date().toLocaleDateString('pt-BR'),
+                horaRegistro: new Date().toLocaleTimeString('pt-BR'),
+                dataViagem: novaViagem.dataViagem || new Date().toLocaleDateString('pt-BR'),
+                usuario: currentUser,
+                consumo: calcularConsumo(),
+                totalCombustivel: calcularCombustivel(),
+                totalGeral: calcularTotalDespesas(novaViagem),
+                lucro: novaViagem.valorVenda ? calcularLucro(novaViagem) : '0.00'
+              };
+
+              setViagens([viagem, ...viagens]);
+              await chamarGoogleSheets('salvarViagem', { viagem });
+              mostrarMensagem('✅ Viagem registrada com sucesso!', 'success');
+            }
             
             setNovaViagem({
               cliente: '', motorista: '', veiculo: '', precoLitro: '', litrosAbastecidos: '',
-              distancia: '', bemSucedida: true, despesas: [], valorVenda: ''
+              distancia: '', bemSucedida: true, despesas: [], valorVenda: '', dataViagem: ''
             });
             setSearchCliente('');
             setSearchMotorista('');
             setSearchVeiculo('');
             setShowNewTrip(false);
+          };
+
+          // Iniciar edição de viagem
+          const iniciarEdicaoViagem = (viagem) => {
+            setEditandoViagem(viagem);
+            setNovaViagem({
+              cliente: viagem.cliente,
+              motorista: viagem.motorista,
+              veiculo: viagem.veiculo,
+              precoLitro: viagem.precoLitro,
+              litrosAbastecidos: viagem.litrosAbastecidos,
+              distancia: viagem.distancia,
+              bemSucedida: viagem.bemSucedida,
+              despesas: viagem.despesas || [],
+              valorVenda: viagem.valorVenda || '',
+              dataViagem: viagem.dataViagem || viagem.dataRegistro
+            });
+            setSearchCliente(viagem.cliente);
+            setSearchMotorista(viagem.motorista);
+            setSearchVeiculo(viagem.veiculo);
+            setShowNewTrip(true);
+          };
+
+          // Excluir viagem
+          const excluirViagem = async (id) => {
+            if (!confirm('Tem certeza que deseja excluir esta viagem?')) return;
+            
+            setViagens(viagens.filter(v => v.id !== id));
+            await chamarGoogleSheets('excluirViagem', { id });
+            mostrarMensagem('Viagem excluída!', 'success');
           };
 
           // Gerenciar itens (cadastros)
@@ -834,12 +887,28 @@
                                 <div key={v.id} className="border rounded-lg p-4 hover:shadow-md transition bg-white">
                                   <div className="flex justify-between items-start flex-wrap gap-4">
                                     <div className="flex-1">
-                                      <div className="flex items-center gap-2 mb-2">
+                                      <div className="flex items-center gap-2 mb-2 flex-wrap">
                                         <h3 className="font-bold text-lg">{v.cliente}</h3>
                                         {v.bemSucedida ? 
                                           <CheckCircle className="text-green-500" size={20} /> : 
                                           <XCircle className="text-red-500" size={20} />
                                         }
+                                        <div className="flex gap-2 ml-auto">
+                                          <button
+                                            onClick={() => iniciarEdicaoViagem(v)}
+                                            className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50"
+                                            title="Editar viagem"
+                                          >
+                                            <Edit size={18} />
+                                          </button>
+                                          <button
+                                            onClick={() => excluirViagem(v.id)}
+                                            className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
+                                            title="Excluir viagem"
+                                          >
+                                            <X size={18} />
+                                          </button>
+                                        </div>
                                       </div>
                                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-600">
                                         <p className="flex items-center gap-1"><User /> {v.motorista}</p>
@@ -847,7 +916,8 @@
                                         <p className="flex items-center gap-1"><MapPin /> {v.distancia} km</p>
                                         <p>⛽ {v.litrosAbastecidos}L × R$ {v.precoLitro}/L</p>
                                         <p>📊 Consumo: {calcularConsumo(v)} km/L</p>
-                                        <p className="text-xs text-gray-500">📅 {v.data} • {v.hora}</p>
+                                        <p className="flex items-center gap-1"><Calendar size={14} /> Data Viagem: {v.dataViagem || v.dataRegistro}</p>
+                                        <p className="text-xs text-gray-500">📝 Registro: {v.dataRegistro} • {v.horaRegistro}</p>
                                       </div>
                                       {v.despesas && v.despesas.length > 0 && (
                                         <div className="mt-3">
@@ -981,19 +1051,34 @@
                 </div>
               </div>
 
-              {/* MODAL NOVA VIAGEM */}
+              {/* MODAL NOVA/EDITAR VIAGEM */}
               {showNewTrip && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => setShowNewTrip(false)}>
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => {setShowNewTrip(false); setEditandoViagem(null);}}>
                   <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                     <div className="p-6">
                       <div className="flex justify-between items-center mb-6">
-                        <h2 className="text-2xl font-bold">Nova Viagem</h2>
-                        <button onClick={() => setShowNewTrip(false)} className="text-gray-500 hover:text-gray-700">
+                        <h2 className="text-2xl font-bold">{editandoViagem ? 'Editar Viagem' : 'Nova Viagem'}</h2>
+                        <button onClick={() => {setShowNewTrip(false); setEditandoViagem(null);}} className="text-gray-500 hover:text-gray-700">
                           <X size={24} />
                         </button>
                       </div>
 
                       <div className="space-y-4">
+                        {/* DATA DA VIAGEM */}
+                        <div>
+                          <label className="block font-semibold mb-2 flex items-center gap-2">
+                            <Calendar size={18} />
+                            Data da Viagem
+                          </label>
+                          <input
+                            type="date"
+                            value={novaViagem.dataViagem}
+                            onChange={(e) => setNovaViagem({...novaViagem, dataViagem: e.target.value})}
+                            className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Deixe em branco para usar a data de hoje</p>
+                        </div>
+
                         {/* CLIENTE */}
                         <div>
                           <label className="block font-semibold mb-2">Cliente *</label>
@@ -1401,7 +1486,7 @@
                           className="w-full bg-indigo-600 text-white py-3 rounded-lg hover:bg-indigo-700 transition font-semibold flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
                         >
                           <Save />
-                          {carregando ? 'Salvando...' : USE_GOOGLE_SHEETS ? 'Salvar no Google Sheets' : 'Salvar Viagem'}
+                          {carregando ? 'Salvando...' : editandoViagem ? 'Atualizar Viagem' : USE_GOOGLE_SHEETS ? 'Salvar no Google Sheets' : 'Salvar Viagem'}
                         </button>
                       </div>
                     </div>
@@ -1417,7 +1502,3 @@
     </script>
 </body>
 </html>
-
-
-
- 
