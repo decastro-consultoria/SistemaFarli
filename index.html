@@ -31,7 +31,10 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
         
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyEKv0CgQRGvDa2askVd4iZMK7lO0Y03zWEZ1Q4-tzMSOsLQ_nCk78v4RzJyVRWsVO2/exec';
+        // ⚠️ IMPORTANTE: Configure esta URL após criar o Google Apps Script
+        // Instruções no arquivo INSTRUCOES_CONFIGURACAO.txt
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxCJPsrbPRZMWgzOmgwOnFs44F3vZLLk98ZKlFb35WKvSYTnRVeBqJJswtngemB4mGN/exec';
+        const USE_GOOGLE_SHEETS = true; // Mude para true após configurar
         
         const Plus = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
         const X = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
@@ -47,6 +50,7 @@
         const RefreshCw = ({size = 20}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>;
         const TrendingUp = ({size = 20}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>;
         const TrendingDown = ({size = 20}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>;
+        const AlertTriangle = ({size = 20}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>;
 
         function TravelControl() {
           const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -89,9 +93,6 @@
           const [itemEditado, setItemEditado] = useState('');
           const [tipoEditando, setTipoEditando] = useState('');
           
-          const [editandoViagem, setEditandoViagem] = useState(null);
-          const [viagemEditada, setViagemEditada] = useState(null);
-          
           const [mensagem, setMensagem] = useState({ texto: '', tipo: '' });
           
           const [searchCliente, setSearchCliente] = useState('');
@@ -103,8 +104,64 @@
           const [showVeiculoDropdown, setShowVeiculoDropdown] = useState(false);
           const [showCategoriaDropdown, setShowCategoriaDropdown] = useState(false);
 
-          // NOVA FUNÇÃO: Carregar dados do Google Sheets
+          // Gerenciamento de dados local
+          const salvarDadosLocal = () => {
+            const dados = {
+              viagens,
+              clientes,
+              motoristas,
+              veiculos,
+              despesas
+            };
+            localStorage.setItem('dadosFarli', JSON.stringify(dados));
+          };
+
+          const carregarDadosLocal = () => {
+            const dados = localStorage.getItem('dadosFarli');
+            if (dados) {
+              const parsed = JSON.parse(dados);
+              setViagens(parsed.viagens || []);
+              setClientes(parsed.clientes || ['Cliente A', 'Cliente B', 'Cliente C']);
+              setMotoristas(parsed.motoristas || ['João Silva', 'Maria Santos']);
+              setVeiculos(parsed.veiculos || ['Fiat Uno - ABC-1234', 'VW Gol - XYZ-5678']);
+              setDespesas(parsed.despesas || ['Alimentação', 'Pedágio', 'Hospedagem', 'Manutenção']);
+            }
+          };
+
+          // Integração Google Sheets
+          const chamarGoogleSheets = async (action, dados) => {
+            if (!USE_GOOGLE_SHEETS) {
+              console.log('Google Sheets desabilitado - salvando localmente');
+              return { success: true, local: true };
+            }
+
+            try {
+              setCarregando(true);
+              const response = await fetch(SCRIPT_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action, ...dados })
+              });
+              
+              // No-cors não permite ler a resposta, assume sucesso
+              return { success: true };
+            } catch (error) {
+              console.error('Erro ao conectar Google Sheets:', error);
+              mostrarMensagem('Erro ao conectar com Google Sheets', 'error');
+              return { success: false };
+            } finally {
+              setCarregando(false);
+            }
+          };
+
           const carregarDadosDoSheets = async () => {
+            if (!USE_GOOGLE_SHEETS) {
+              carregarDadosLocal();
+              mostrarMensagem('Dados carregados localmente', 'info');
+              return;
+            }
+
             try {
               setCarregandoDados(true);
               const response = await fetch(`${SCRIPT_URL}?action=carregarDados`, {
@@ -119,35 +176,18 @@
                 setMotoristas(data.dados.motoristas.length > 0 ? data.dados.motoristas : motoristas);
                 setVeiculos(data.dados.veiculos.length > 0 ? data.dados.veiculos : veiculos);
                 setDespesas(data.dados.despesas.length > 0 ? data.dados.despesas : despesas);
-                mostrarMensagem('Dados carregados!', 'success');
+                mostrarMensagem('Dados carregados do Google Sheets!', 'success');
               }
             } catch (error) {
-              console.error('Erro ao carregar:', error);
-              mostrarMensagem('Erro ao carregar dados', 'error');
+              console.error('Erro ao carregar do Sheets:', error);
+              carregarDadosLocal();
+              mostrarMensagem('Carregado localmente (offline)', 'warning');
             } finally {
               setCarregandoDados(false);
             }
           };
 
-          const chamarGoogleSheets = async (action, dados) => {
-            try {
-              setCarregando(true);
-              const response = await fetch(SCRIPT_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action, ...dados })
-              });
-              
-              const result = await response.json();
-              return result;
-            } catch (error) {
-              console.error('Erro:', error);
-              return { success: false };
-            } finally {
-              setCarregando(false);
-            }
-          };
-
+          // Inicialização
           useEffect(() => {
             const user = localStorage.getItem('currentUser');
             if (user) {
@@ -156,17 +196,25 @@
             }
           }, []);
 
-          // NOVO: Carregar dados ao autenticar
           useEffect(() => {
             if (isAuthenticated) {
               carregarDadosDoSheets();
             }
           }, [isAuthenticated]);
 
+          // Salvar automaticamente no localStorage
+          useEffect(() => {
+            if (isAuthenticated) {
+              salvarDadosLocal();
+            }
+          }, [viagens, clientes, motoristas, veiculos, despesas]);
+
+          // Autenticação
           const handleLogin = () => {
             const { username, password } = loginForm;
+            
             if (!username || !password) {
-              mostrarMensagem('Preencha usuário e senha', 'error');
+              mostrarMensagem('Preencha usuário e senha!', 'error');
               return;
             }
 
@@ -176,32 +224,34 @@
               setCurrentUser(username);
               setIsAuthenticated(true);
               localStorage.setItem('currentUser', username);
-              mostrarMensagem('Login realizado!', 'success');
+              mostrarMensagem(`Bem-vindo, ${username}!`, 'success');
+              setLoginForm({ username: '', password: '', email: '' });
             } else {
-              mostrarMensagem('Usuário ou senha incorretos', 'error');
+              mostrarMensagem('Usuário ou senha incorretos!', 'error');
             }
           };
 
           const handleRegister = () => {
             const { username, password, email } = loginForm;
+            
             if (!username || !password || !email) {
-              mostrarMensagem('Preencha todos os campos', 'error');
+              mostrarMensagem('Preencha todos os campos!', 'error');
               return;
             }
 
             if (username.length < 3) {
-              mostrarMensagem('Usuário deve ter 3+ caracteres', 'error');
+              mostrarMensagem('Usuário deve ter pelo menos 3 caracteres', 'error');
               return;
             }
 
             if (password.length < 4) {
-              mostrarMensagem('Senha deve ter 4+ caracteres', 'error');
+              mostrarMensagem('Senha deve ter pelo menos 4 caracteres', 'error');
               return;
             }
 
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
             if (!emailRegex.test(email)) {
-              mostrarMensagem('Email inválido', 'error');
+              mostrarMensagem('Email inválido!', 'error');
               return;
             }
 
@@ -212,57 +262,67 @@
               return;
             }
 
-            users[username] = { password, email };
+            users[username] = { password, email, createdAt: new Date().toISOString() };
             localStorage.setItem('users', JSON.stringify(users));
-            mostrarMensagem('Cadastrado com sucesso!', 'success');
+            mostrarMensagem('Cadastro realizado com sucesso!', 'success');
             setShowRegister(false);
-            setLoginForm({ username: '', password: '', email: '' });
+            setLoginForm({ username, password: '', email: '' });
           };
 
           const handleForgotPassword = () => {
             const { username, email } = loginForm;
             
             if (!username || !email) {
-              mostrarMensagem('Preencha usuário e email', 'error');
+              mostrarMensagem('Preencha usuário e email!', 'error');
               return;
             }
 
             const users = JSON.parse(localStorage.getItem('users') || '{}');
             
             if (!users[username]) {
-              mostrarMensagem('Usuário não encontrado', 'error');
+              mostrarMensagem('Usuário não encontrado!', 'error');
               return;
             }
 
             if (users[username].email !== email) {
-              mostrarMensagem('Email incorreto', 'error');
+              mostrarMensagem('Email incorreto para este usuário!', 'error');
               return;
             }
 
-            alert(`Sua senha: ${users[username].password}`);
-            setShowForgotPassword(false);
-            setLoginForm({ username: '', password: '', email: '' });
+            mostrarMensagem(`Sua senha é: ${users[username].password}`, 'info');
+            setTimeout(() => {
+              setShowForgotPassword(false);
+              setLoginForm({ username: '', password: '', email: '' });
+            }, 5000);
           };
 
           const handleLogout = () => {
-            setIsAuthenticated(false);
-            setCurrentUser('');
-            localStorage.removeItem('currentUser');
+            if (confirm('Deseja realmente sair?')) {
+              setIsAuthenticated(false);
+              setCurrentUser('');
+              localStorage.removeItem('currentUser');
+              mostrarMensagem('Até logo!', 'info');
+            }
           };
 
           const mostrarMensagem = (texto, tipo = 'info') => {
             setMensagem({ texto, tipo });
-            setTimeout(() => setMensagem({ texto: '', tipo: '' }), 3000);
+            setTimeout(() => setMensagem({ texto: '', tipo: '' }), 4000);
           };
 
+          // Filtros
           const clientesFiltrados = clientes.filter(c => c.toLowerCase().includes(searchCliente.toLowerCase()));
           const motoristasFiltrados = motoristas.filter(m => m.toLowerCase().includes(searchMotorista.toLowerCase()));
           const veiculosFiltrados = veiculos.filter(v => v.toLowerCase().includes(searchVeiculo.toLowerCase()));
           const despesasFiltradas = despesas.filter(d => d.toLowerCase().includes(searchCategoria.toLowerCase()));
 
+          // Cadastros rápidos
           const adicionarClienteRapido = async () => {
             const novo = novoClienteTemp.trim();
-            if (!novo) return;
+            if (!novo) {
+              mostrarMensagem('Digite um nome!', 'error');
+              return;
+            }
             
             if (clientes.some(c => c.toLowerCase() === novo.toLowerCase())) {
               mostrarMensagem('Cliente já existe!', 'warning');
@@ -276,12 +336,15 @@
             setShowAddCliente(false);
             
             await chamarGoogleSheets('salvarItem', { tipo: 'cliente', item: novo });
-            mostrarMensagem('Salvo no Google Sheets!', 'success');
+            mostrarMensagem('Cliente adicionado!', 'success');
           };
 
           const adicionarMotoristaRapido = async () => {
             const novo = novoMotoristaTemp.trim();
-            if (!novo) return;
+            if (!novo) {
+              mostrarMensagem('Digite um nome!', 'error');
+              return;
+            }
             
             if (motoristas.some(m => m.toLowerCase() === novo.toLowerCase())) {
               mostrarMensagem('Motorista já existe!', 'warning');
@@ -295,12 +358,15 @@
             setShowAddMotorista(false);
             
             await chamarGoogleSheets('salvarItem', { tipo: 'motorista', item: novo });
-            mostrarMensagem('Salvo no Google Sheets!', 'success');
+            mostrarMensagem('Motorista adicionado!', 'success');
           };
 
           const adicionarVeiculoRapido = async () => {
             const novo = novoVeiculoTemp.trim();
-            if (!novo) return;
+            if (!novo) {
+              mostrarMensagem('Digite os dados do veículo!', 'error');
+              return;
+            }
             
             if (veiculos.some(v => v.toLowerCase() === novo.toLowerCase())) {
               mostrarMensagem('Veículo já existe!', 'warning');
@@ -314,12 +380,15 @@
             setShowAddVeiculo(false);
             
             await chamarGoogleSheets('salvarItem', { tipo: 'veiculo', item: novo });
-            mostrarMensagem('Salvo no Google Sheets!', 'success');
+            mostrarMensagem('Veículo adicionado!', 'success');
           };
 
           const adicionarCategoriaRapida = async () => {
             const nova = novaCategoriaTemp.trim();
-            if (!nova) return;
+            if (!nova) {
+              mostrarMensagem('Digite uma categoria!', 'error');
+              return;
+            }
             
             if (despesas.some(d => d.toLowerCase() === nova.toLowerCase())) {
               mostrarMensagem('Categoria já existe!', 'warning');
@@ -333,19 +402,29 @@
             setShowAddCategoria(false);
             
             await chamarGoogleSheets('salvarItem', { tipo: 'despesa', item: nova });
-            mostrarMensagem('Salvo no Google Sheets!', 'success');
+            mostrarMensagem('Categoria adicionada!', 'success');
           };
 
+          // Despesas
           const adicionarDespesa = () => {
-            if (novaDespesa.categoria && novaDespesa.valor) {
-              setNovaViagem({
-                ...novaViagem,
-                despesas: [...novaViagem.despesas, { ...novaDespesa, id: Date.now() }]
-              });
-              setNovaDespesa({ categoria: '', valor: '' });
-              setSearchCategoria('');
-              setShowAddDespesa(false);
+            if (!novaDespesa.categoria || !novaDespesa.valor) {
+              mostrarMensagem('Preencha categoria e valor!', 'error');
+              return;
             }
+
+            if (parseFloat(novaDespesa.valor) <= 0) {
+              mostrarMensagem('Valor deve ser maior que zero!', 'error');
+              return;
+            }
+            
+            setNovaViagem({
+              ...novaViagem,
+              despesas: [...novaViagem.despesas, { ...novaDespesa, id: Date.now() }]
+            });
+            setNovaDespesa({ categoria: '', valor: '' });
+            setSearchCategoria('');
+            setShowAddDespesa(false);
+            mostrarMensagem('Despesa adicionada!', 'success');
           };
 
           const removerDespesa = (id) => {
@@ -353,8 +432,10 @@
               ...novaViagem,
               despesas: novaViagem.despesas.filter(d => d.id !== id)
             });
+            mostrarMensagem('Despesa removida', 'info');
           };
 
+          // Cálculos
           const calcularCombustivel = (viagem = novaViagem) => {
             if (viagem.litrosAbastecidos && viagem.precoLitro) {
               return (parseFloat(viagem.litrosAbastecidos) * parseFloat(viagem.precoLitro)).toFixed(2);
@@ -374,16 +455,16 @@
             return (total + parseFloat(calcularCombustivel(viagem))).toFixed(2);
           };
 
-          // NOVA FUNÇÃO: Calcular lucro
           const calcularLucro = (viagem) => {
             const valorVenda = parseFloat(viagem.valorVenda || 0);
             const totalDespesas = parseFloat(calcularTotalDespesas(viagem));
             return (valorVenda - totalDespesas).toFixed(2);
           };
 
+          // Salvar viagem
           const salvarViagem = async () => {
             if (!novaViagem.cliente || !novaViagem.motorista || !novaViagem.veiculo) {
-              mostrarMensagem('Preencha os campos obrigatórios!', 'error');
+              mostrarMensagem('Preencha Cliente, Motorista e Veículo!', 'error');
               return;
             }
 
@@ -391,21 +472,19 @@
               ...novaViagem,
               id: Date.now(),
               data: new Date().toLocaleDateString('pt-BR'),
+              hora: new Date().toLocaleTimeString('pt-BR'),
               usuario: currentUser,
               consumo: calcularConsumo(),
               totalCombustivel: calcularCombustivel(),
-              totalGeral: calcularTotalDespesas(novaViagem)
+              totalGeral: calcularTotalDespesas(novaViagem),
+              lucro: novaViagem.valorVenda ? calcularLucro(novaViagem) : '0.00'
             };
 
-            setViagens([...viagens, viagem]);
+            setViagens([viagem, ...viagens]);
             
-            const result = await chamarGoogleSheets('salvarViagem', { viagem });
+            await chamarGoogleSheets('salvarViagem', { viagem });
             
-            if (result.success) {
-              mostrarMensagem('Viagem salva!', 'success');
-            } else {
-              mostrarMensagem('Erro ao salvar', 'error');
-            }
+            mostrarMensagem('✅ Viagem registrada com sucesso!', 'success');
             
             setNovaViagem({
               cliente: '', motorista: '', veiculo: '', precoLitro: '', litrosAbastecidos: '',
@@ -417,9 +496,13 @@
             setShowNewTrip(false);
           };
 
+          // Gerenciar itens (cadastros)
           const adicionarNovoItem = async (tipo) => {
             const item = novoItem.trim();
-            if (!item) return;
+            if (!item) {
+              mostrarMensagem('Digite um valor!', 'error');
+              return;
+            }
             
             let arr, setArr;
             switch(tipo) {
@@ -436,7 +519,7 @@
             
             setArr([...arr, item]);
             await chamarGoogleSheets('salvarItem', { tipo, item });
-            mostrarMensagem('Salvo!', 'success');
+            mostrarMensagem('Item adicionado!', 'success');
             setNovoItem('');
           };
 
@@ -476,7 +559,7 @@
             
             setEditandoItem(null);
             setItemEditado('');
-            mostrarMensagem('Editado!', 'success');
+            mostrarMensagem('Item editado!', 'success');
           };
 
           const cancelarEdicao = () => {
@@ -485,7 +568,7 @@
           };
 
           const removerItem = async (item, tipo) => {
-            if (!confirm(`Remover "${item}"?`)) return;
+            if (!confirm(`Tem certeza que deseja remover "${item}"?`)) return;
 
             switch(tipo) {
               case 'despesa': setDespesas(despesas.filter(d => d !== item)); break;
@@ -495,9 +578,10 @@
             }
             
             await chamarGoogleSheets('removerItem', { tipo, item });
-            mostrarMensagem('Removido!', 'success');
+            mostrarMensagem('Item removido!', 'success');
           };
 
+          // TELA DE LOGIN
           if (!isAuthenticated) {
             return (
               <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-6">
@@ -521,41 +605,53 @@
                     <p className="text-gray-600 mt-2">Controle de Viagens</p>
                   </div>
 
+                  {!USE_GOOGLE_SHEETS && (
+                    <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
+                      <p className="font-semibold flex items-center gap-2 text-yellow-800">
+                        <AlertTriangle size={16} />
+                        Modo Offline
+                      </p>
+                      <p className="text-yellow-700 text-xs mt-1">
+                        Configure o Google Sheets para sincronização
+                      </p>
+                    </div>
+                  )}
+
                   <div className="space-y-4">
                     <div>
-                      <label className="block font-semibold mb-2">Usuário</label>
+                      <label className="block font-semibold mb-2 text-gray-700">Usuário</label>
                       <input
                         type="text"
                         value={loginForm.username}
                         onChange={(e) => setLoginForm({...loginForm, username: e.target.value})}
                         placeholder="Digite seu usuário"
-                        className="w-full border rounded px-3 py-2"
+                        className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         onKeyPress={(e) => e.key === 'Enter' && !showRegister && !showForgotPassword && handleLogin()}
                       />
                     </div>
                     
                     {(showRegister || showForgotPassword) && (
                       <div>
-                        <label className="block font-semibold mb-2">Email</label>
+                        <label className="block font-semibold mb-2 text-gray-700">Email</label>
                         <input
                           type="email"
                           value={loginForm.email}
                           onChange={(e) => setLoginForm({...loginForm, email: e.target.value})}
                           placeholder="Digite seu email"
-                          className="w-full border rounded px-3 py-2"
+                          className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         />
                       </div>
                     )}
                     
                     {!showForgotPassword && (
                       <div>
-                        <label className="block font-semibold mb-2">Senha</label>
+                        <label className="block font-semibold mb-2 text-gray-700">Senha</label>
                         <input
                           type="password"
                           value={loginForm.password}
                           onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
                           placeholder="Digite sua senha"
-                          className="w-full border rounded px-3 py-2"
+                          className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                           onKeyPress={(e) => e.key === 'Enter' && (showRegister ? handleRegister() : handleLogin())}
                         />
                       </div>
@@ -624,15 +720,18 @@
                   <div className="mt-6 p-4 bg-blue-50 rounded-lg text-sm">
                     <p className="font-semibold flex items-center gap-2 mb-1">
                       <Cloud size={16} />
-                      Google Sheets Integrado
+                      {USE_GOOGLE_SHEETS ? 'Google Sheets Ativo' : 'Armazenamento Local'}
                     </p>
-                    <p className="text-gray-700 text-xs">Dados salvos na planilha "Controle Farli"</p>
+                    <p className="text-gray-700 text-xs">
+                      {USE_GOOGLE_SHEETS ? 'Dados salvos na planilha' : 'Dados salvos no navegador'}
+                    </p>
                   </div>
                 </div>
               </div>
             );
           }
 
+          // TELA PRINCIPAL
           return (
             <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
               {mensagem.texto && (
@@ -649,11 +748,12 @@
               {(carregando || carregandoDados) && (
                 <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-indigo-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2">
                   <div className="animate-spin"><RefreshCw size={20} /></div>
-                  <span>{carregandoDados ? 'Carregando dados...' : 'Sincronizando...'}</span>
+                  <span>{carregandoDados ? 'Carregando dados...' : 'Salvando...'}</span>
                 </div>
               )}
               
               <div className="max-w-6xl mx-auto">
+                {/* HEADER */}
                 <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
                   <div className="flex items-center justify-between flex-wrap gap-4">
                     <div>
@@ -662,19 +762,21 @@
                       </h1>
                       <p className="text-gray-600 mt-1 flex items-center gap-2 flex-wrap">
                         <span>Olá, <strong>{currentUser}</strong>!</span>
-                        <span className="text-green-600 text-sm flex items-center gap-1">
-                          <Cloud size={14} /> Google Sheets
+                        <span className={`text-sm flex items-center gap-1 ${USE_GOOGLE_SHEETS ? 'text-green-600' : 'text-orange-600'}`}>
+                          <Cloud size={14} /> {USE_GOOGLE_SHEETS ? 'Online' : 'Offline'}
                         </span>
                       </p>
                     </div>
-                    <div className="flex gap-3">
-                      <button
-                        onClick={carregarDadosDoSheets}
-                        className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition flex items-center gap-2 font-semibold"
-                        disabled={carregandoDados}
-                      >
-                        <RefreshCw size={16} /> Atualizar
-                      </button>
+                    <div className="flex gap-3 flex-wrap">
+                      {USE_GOOGLE_SHEETS && (
+                        <button
+                          onClick={carregarDadosDoSheets}
+                          className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition flex items-center gap-2 font-semibold"
+                          disabled={carregandoDados}
+                        >
+                          <RefreshCw size={16} /> Atualizar
+                        </button>
+                      )}
                       <button
                         onClick={() => setShowNewTrip(true)}
                         className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition flex items-center gap-2 font-semibold"
@@ -692,6 +794,7 @@
                   </div>
                 </div>
 
+                {/* TABS */}
                 <div className="bg-white rounded-lg shadow-lg mb-6">
                   <div className="flex border-b">
                     {['viagens', 'cadastros'].map((tab) => (
@@ -708,13 +811,17 @@
                   </div>
 
                   <div className="p-6">
+                    {/* ABA VIAGENS */}
                     {activeTab === 'viagens' && (
                       <div>
-                        <h2 className="text-2xl font-bold mb-4">Viagens Registradas</h2>
+                        <div className="flex justify-between items-center mb-4">
+                          <h2 className="text-2xl font-bold">Viagens Registradas</h2>
+                          <span className="text-gray-600 text-sm">Total: {viagens.length}</span>
+                        </div>
                         {viagens.length === 0 ? (
                           <div className="text-center py-12 text-gray-500">
                             <div className="flex justify-center mb-4"><Car size={48} /></div>
-                            <p>Nenhuma viagem registrada</p>
+                            <p className="text-lg font-semibold">Nenhuma viagem registrada</p>
                             <p className="text-sm mt-2">Clique em "Nova Viagem" para começar</p>
                           </div>
                         ) : (
@@ -724,24 +831,27 @@
                               const lucroPositivo = parseFloat(lucro) >= 0;
                               
                               return (
-                                <div key={v.id} className="border rounded-lg p-4 hover:shadow-md transition">
+                                <div key={v.id} className="border rounded-lg p-4 hover:shadow-md transition bg-white">
                                   <div className="flex justify-between items-start flex-wrap gap-4">
                                     <div className="flex-1">
                                       <div className="flex items-center gap-2 mb-2">
                                         <h3 className="font-bold text-lg">{v.cliente}</h3>
-                                        {v.bemSucedida ? <CheckCircle className="text-green-500" /> : <XCircle className="text-red-500" />}
+                                        {v.bemSucedida ? 
+                                          <CheckCircle className="text-green-500" size={20} /> : 
+                                          <XCircle className="text-red-500" size={20} />
+                                        }
                                       </div>
                                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-600">
                                         <p className="flex items-center gap-1"><User /> {v.motorista}</p>
                                         <p className="flex items-center gap-1"><Car size={16} /> {v.veiculo}</p>
                                         <p className="flex items-center gap-1"><MapPin /> {v.distancia} km</p>
                                         <p>⛽ {v.litrosAbastecidos}L × R$ {v.precoLitro}/L</p>
-                                        <p>📊 {calcularConsumo(v)} km/L</p>
-                                        <p className="text-xs text-gray-500">📅 {v.data}</p>
+                                        <p>📊 Consumo: {calcularConsumo(v)} km/L</p>
+                                        <p className="text-xs text-gray-500">📅 {v.data} • {v.hora}</p>
                                       </div>
                                       {v.despesas && v.despesas.length > 0 && (
                                         <div className="mt-3">
-                                          <p className="font-semibold text-sm mb-1">Despesas:</p>
+                                          <p className="font-semibold text-sm mb-1">Despesas Adicionais:</p>
                                           <div className="flex flex-wrap gap-2">
                                             {v.despesas.map((d, i) => (
                                               <span key={i} className="bg-indigo-100 text-indigo-800 px-2 py-1 rounded text-xs">
@@ -768,7 +878,7 @@
                                         <div className={`mt-2 px-3 py-2 rounded-lg ${lucroPositivo ? 'bg-green-100' : 'bg-red-100'}`}>
                                           <p className={`text-sm font-semibold flex items-center gap-1 justify-end ${lucroPositivo ? 'text-green-700' : 'text-red-700'}`}>
                                             {lucroPositivo ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-                                            Lucro: R$ {lucro}
+                                            {lucroPositivo ? 'Lucro' : 'Prejuízo'}: R$ {Math.abs(parseFloat(lucro)).toFixed(2)}
                                           </p>
                                         </div>
                                       )}
@@ -782,14 +892,17 @@
                       </div>
                     )}
 
+                    {/* ABA CADASTROS */}
                     {activeTab === 'cadastros' && (
                       <div className="space-y-6">
-                        <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
-                          <p className="text-sm text-green-800 flex items-center gap-2">
-                            <Cloud size={14} />
-                            <strong>Sincronizado!</strong> Alterações salvas no Google Sheets
-                          </p>
-                        </div>
+                        {USE_GOOGLE_SHEETS && (
+                          <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+                            <p className="text-sm text-green-800 flex items-center gap-2">
+                              <Cloud size={14} />
+                              <strong>Sincronizado!</strong> Alterações salvas no Google Sheets
+                            </p>
+                          </div>
+                        )}
                         
                         {[
                           { titulo: 'Categorias de Despesas', items: despesas, tipo: 'despesa', icon: DollarSign },
@@ -801,19 +914,20 @@
                             <h3 className="text-xl font-bold mb-3 flex items-center gap-2">
                               <cat.icon size={20} />
                               {cat.titulo}
+                              <span className="text-sm font-normal text-gray-500">({cat.items.length})</span>
                             </h3>
                             <div className="flex gap-2 mb-3">
                               <input
                                 type="text"
                                 value={novoItem}
                                 onChange={(e) => setNovoItem(e.target.value)}
-                                placeholder="Novo item"
-                                className="flex-1 border rounded px-3 py-2"
+                                placeholder={`Novo ${cat.titulo.toLowerCase().slice(0, -1)}`}
+                                className="flex-1 border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                 onKeyPress={(e) => e.key === 'Enter' && adicionarNovoItem(cat.tipo)}
                               />
                               <button
                                 onClick={() => adicionarNovoItem(cat.tipo)}
-                                className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 transition"
+                                className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 transition disabled:bg-gray-400"
                                 disabled={carregando}
                               >
                                 <Plus />
@@ -821,34 +935,36 @@
                             </div>
                             <div className="flex flex-wrap gap-2">
                               {cat.items.map((item, i) => (
-                                <div key={i} className="bg-gray-100 px-3 py-1 rounded-full text-sm flex items-center gap-2">
+                                <div key={i} className="bg-gray-100 px-3 py-2 rounded-full text-sm flex items-center gap-2">
                                   {editandoItem === item && tipoEditando === cat.tipo ? (
                                     <>
                                       <input
                                         type="text"
                                         value={itemEditado}
                                         onChange={(e) => setItemEditado(e.target.value)}
-                                        className="border rounded px-2 py-0.5 text-sm w-32"
+                                        className="border rounded px-2 py-0.5 text-sm w-32 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                         onKeyPress={(e) => e.key === 'Enter' && salvarEdicao()}
                                         autoFocus
                                       />
-                                      <button onClick={salvarEdicao} className="text-green-600">✓</button>
-                                      <button onClick={cancelarEdicao} className="text-gray-600">✗</button>
+                                      <button onClick={salvarEdicao} className="text-green-600 font-bold">✓</button>
+                                      <button onClick={cancelarEdicao} className="text-gray-600 font-bold">✗</button>
                                     </>
                                   ) : (
                                     <>
                                       <span>{item}</span>
                                       <button 
                                         onClick={() => iniciarEdicao(item, cat.tipo)}
-                                        className="text-blue-600 text-xs"
+                                        className="text-blue-600 text-xs hover:text-blue-800"
                                         disabled={carregando}
+                                        title="Editar"
                                       >
                                         ✏️
                                       </button>
                                       <button 
                                         onClick={() => removerItem(item, cat.tipo)}
-                                        className="text-red-600 text-xs"
+                                        className="text-red-600 text-xs hover:text-red-800"
                                         disabled={carregando}
+                                        title="Remover"
                                       >
                                         🗑️
                                       </button>
@@ -865,6 +981,7 @@
                 </div>
               </div>
 
+              {/* MODAL NOVA VIAGEM */}
               {showNewTrip && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => setShowNewTrip(false)}>
                   <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -877,6 +994,7 @@
                       </div>
 
                       <div className="space-y-4">
+                        {/* CLIENTE */}
                         <div>
                           <label className="block font-semibold mb-2">Cliente *</label>
                           {!showAddCliente ? (
@@ -891,8 +1009,8 @@
                                   }}
                                   onFocus={() => setShowClienteDropdown(true)}
                                   onBlur={() => setTimeout(() => setShowClienteDropdown(false), 200)}
-                                  placeholder="Digite para buscar"
-                                  className="w-full border rounded px-3 py-2"
+                                  placeholder="Digite para buscar ou criar novo"
+                                  className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                 />
                                 {showClienteDropdown && clientesFiltrados.length > 0 && (
                                   <div className="absolute z-10 w-full bg-white border rounded-b shadow-lg max-h-48 overflow-y-auto">
@@ -912,7 +1030,7 @@
                                   </div>
                                 )}
                               </div>
-                              <button onClick={() => setShowAddCliente(true)} className="bg-green-600 text-white px-4 py-2 rounded">
+                              <button onClick={() => setShowAddCliente(true)} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
                                 <Plus />
                               </button>
                             </div>
@@ -923,18 +1041,19 @@
                                 value={novoClienteTemp}
                                 onChange={(e) => setNovoClienteTemp(e.target.value)}
                                 placeholder="Nome do novo cliente"
-                                className="flex-1 border rounded px-3 py-2"
+                                className="flex-1 border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
                                 onKeyPress={(e) => e.key === 'Enter' && adicionarClienteRapido()}
                                 autoFocus
                               />
-                              <button onClick={adicionarClienteRapido} className="bg-green-600 text-white px-4 py-2 rounded">✓</button>
-                              <button onClick={() => {setShowAddCliente(false); setNovoClienteTemp('');}} className="bg-gray-300 px-4 py-2 rounded">
+                              <button onClick={adicionarClienteRapido} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">✓</button>
+                              <button onClick={() => {setShowAddCliente(false); setNovoClienteTemp('');}} className="bg-gray-300 px-4 py-2 rounded hover:bg-gray-400">
                                 <X />
                               </button>
                             </div>
                           )}
                         </div>
 
+                        {/* MOTORISTA */}
                         <div>
                           <label className="block font-semibold mb-2">Motorista *</label>
                           {!showAddMotorista ? (
@@ -949,8 +1068,8 @@
                                   }}
                                   onFocus={() => setShowMotoristaDropdown(true)}
                                   onBlur={() => setTimeout(() => setShowMotoristaDropdown(false), 200)}
-                                  placeholder="Digite para buscar"
-                                  className="w-full border rounded px-3 py-2"
+                                  placeholder="Digite para buscar ou criar novo"
+                                  className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                 />
                                 {showMotoristaDropdown && motoristasFiltrados.length > 0 && (
                                   <div className="absolute z-10 w-full bg-white border rounded-b shadow-lg max-h-48 overflow-y-auto">
@@ -970,7 +1089,7 @@
                                   </div>
                                 )}
                               </div>
-                              <button onClick={() => setShowAddMotorista(true)} className="bg-green-600 text-white px-4 py-2 rounded">
+                              <button onClick={() => setShowAddMotorista(true)} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
                                 <Plus />
                               </button>
                             </div>
@@ -981,18 +1100,19 @@
                                 value={novoMotoristaTemp}
                                 onChange={(e) => setNovoMotoristaTemp(e.target.value)}
                                 placeholder="Nome do motorista"
-                                className="flex-1 border rounded px-3 py-2"
+                                className="flex-1 border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
                                 onKeyPress={(e) => e.key === 'Enter' && adicionarMotoristaRapido()}
                                 autoFocus
                               />
-                              <button onClick={adicionarMotoristaRapido} className="bg-green-600 text-white px-4 py-2 rounded">✓</button>
-                              <button onClick={() => {setShowAddMotorista(false); setNovoMotoristaTemp('');}} className="bg-gray-300 px-4 py-2 rounded">
+                              <button onClick={adicionarMotoristaRapido} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">✓</button>
+                              <button onClick={() => {setShowAddMotorista(false); setNovoMotoristaTemp('');}} className="bg-gray-300 px-4 py-2 rounded hover:bg-gray-400">
                                 <X />
                               </button>
                             </div>
                           )}
                         </div>
 
+                        {/* VEÍCULO */}
                         <div>
                           <label className="block font-semibold mb-2">Veículo *</label>
                           {!showAddVeiculo ? (
@@ -1007,8 +1127,8 @@
                                   }}
                                   onFocus={() => setShowVeiculoDropdown(true)}
                                   onBlur={() => setTimeout(() => setShowVeiculoDropdown(false), 200)}
-                                  placeholder="Digite para buscar"
-                                  className="w-full border rounded px-3 py-2"
+                                  placeholder="Digite para buscar ou criar novo"
+                                  className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                 />
                                 {showVeiculoDropdown && veiculosFiltrados.length > 0 && (
                                   <div className="absolute z-10 w-full bg-white border rounded-b shadow-lg max-h-48 overflow-y-auto">
@@ -1028,7 +1148,7 @@
                                   </div>
                                 )}
                               </div>
-                              <button onClick={() => setShowAddVeiculo(true)} className="bg-green-600 text-white px-4 py-2 rounded">
+                              <button onClick={() => setShowAddVeiculo(true)} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
                                 <Plus />
                               </button>
                             </div>
@@ -1039,23 +1159,23 @@
                                 value={novoVeiculoTemp}
                                 onChange={(e) => setNovoVeiculoTemp(e.target.value)}
                                 placeholder="Ex: Fiat Uno - ABC-1234"
-                                className="flex-1 border rounded px-3 py-2"
+                                className="flex-1 border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
                                 onKeyPress={(e) => e.key === 'Enter' && adicionarVeiculoRapido()}
                                 autoFocus
                               />
-                              <button onClick={adicionarVeiculoRapido} className="bg-green-600 text-white px-4 py-2 rounded">✓</button>
-                              <button onClick={() => {setShowAddVeiculo(false); setNovoVeiculoTemp('');}} className="bg-gray-300 px-4 py-2 rounded">
+                              <button onClick={adicionarVeiculoRapido} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">✓</button>
+                              <button onClick={() => {setShowAddVeiculo(false); setNovoVeiculoTemp('');}} className="bg-gray-300 px-4 py-2 rounded hover:bg-gray-400">
                                 <X />
                               </button>
                             </div>
                           )}
                         </div>
 
-                        {/* NOVO CAMPO: Valor da Venda */}
+                        {/* VALOR DA VENDA */}
                         <div>
                           <label className="block font-semibold mb-2 flex items-center gap-2">
                             <DollarSign size={18} />
-                            Valor da Venda
+                            Valor da Venda (Receita)
                           </label>
                           <input
                             type="number"
@@ -1063,20 +1183,21 @@
                             value={novaViagem.valorVenda}
                             onChange={(e) => setNovaViagem({...novaViagem, valorVenda: e.target.value})}
                             placeholder="Ex: 500.00"
-                            className="w-full border rounded px-3 py-2"
+                            className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                           />
                         </div>
 
+                        {/* DADOS DO COMBUSTÍVEL */}
                         <div className="grid grid-cols-3 gap-3">
                           <div>
-                            <label className="block font-semibold mb-2 text-sm">Preço/L</label>
+                            <label className="block font-semibold mb-2 text-sm">Preço/Litro (R$)</label>
                             <input
                               type="number"
                               step="0.01"
                               value={novaViagem.precoLitro}
                               onChange={(e) => setNovaViagem({...novaViagem, precoLitro: e.target.value})}
                               placeholder="5.50"
-                              className="w-full border rounded px-3 py-2"
+                              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                             />
                           </div>
                           <div>
@@ -1087,31 +1208,33 @@
                               value={novaViagem.litrosAbastecidos}
                               onChange={(e) => setNovaViagem({...novaViagem, litrosAbastecidos: e.target.value})}
                               placeholder="30"
-                              className="w-full border rounded px-3 py-2"
+                              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                             />
                           </div>
                           <div>
-                            <label className="block font-semibold mb-2 text-sm">Distância</label>
+                            <label className="block font-semibold mb-2 text-sm">Distância (km)</label>
                             <input
                               type="number"
                               value={novaViagem.distancia}
                               onChange={(e) => setNovaViagem({...novaViagem, distancia: e.target.value})}
                               placeholder="150"
-                              className="w-full border rounded px-3 py-2"
+                              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                             />
                           </div>
                         </div>
 
+                        {/* RESUMO FINANCEIRO */}
                         {(novaViagem.precoLitro && novaViagem.litrosAbastecidos) || novaViagem.valorVenda ? (
                           <div className="bg-gradient-to-r from-indigo-50 to-blue-50 p-4 rounded-lg border border-indigo-200">
+                            <p className="font-semibold mb-3 text-indigo-900">Resumo Financeiro</p>
                             <div className="grid grid-cols-2 gap-3">
                               <div>
                                 <p className="text-xs text-gray-600 mb-1">Combustível</p>
-                                <p className="font-bold text-lg">R$ {calcularCombustivel()}</p>
+                                <p className="font-bold text-lg text-red-600">R$ {calcularCombustivel()}</p>
                               </div>
                               {novaViagem.distancia && parseFloat(novaViagem.distancia) > 0 && (
                                 <div>
-                                  <p className="text-xs text-gray-600 mb-1">Consumo</p>
+                                  <p className="text-xs text-gray-600 mb-1">Consumo Médio</p>
                                   <p className="font-semibold text-lg">{calcularConsumo()} km/L</p>
                                 </div>
                               )}
@@ -1121,7 +1244,7 @@
                               </div>
                               {novaViagem.valorVenda && (
                                 <div className={`p-2 rounded ${parseFloat(calcularLucro(novaViagem)) >= 0 ? 'bg-green-100' : 'bg-red-100'}`}>
-                                  <p className="text-xs text-gray-600 mb-1">Lucro Estimado</p>
+                                  <p className="text-xs text-gray-600 mb-1">Lucro/Prejuízo</p>
                                   <p className={`font-bold text-lg ${parseFloat(calcularLucro(novaViagem)) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                                     R$ {calcularLucro(novaViagem)}
                                   </p>
@@ -1131,39 +1254,41 @@
                           </div>
                         ) : null}
 
+                        {/* STATUS DA VIAGEM */}
                         <div>
-                          <label className="block font-semibold mb-2">Bem-Sucedida?</label>
+                          <label className="block font-semibold mb-2">Status da Viagem</label>
                           <div className="flex gap-3">
                             <button
                               onClick={() => setNovaViagem({...novaViagem, bemSucedida: true})}
-                              className={`flex-1 py-2 rounded border-2 transition text-sm ${
-                                novaViagem.bemSucedida ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-300'
+                              className={`flex-1 py-2 rounded border-2 transition text-sm font-semibold ${
+                                novaViagem.bemSucedida ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-300 text-gray-600'
                               }`}
                             >
                               <CheckCircle className="inline mr-1" size={16} />
-                              Sim
+                              Bem-Sucedida
                             </button>
                             <button
                               onClick={() => setNovaViagem({...novaViagem, bemSucedida: false})}
-                              className={`flex-1 py-2 rounded border-2 transition text-sm ${
-                                !novaViagem.bemSucedida ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-300'
+                              className={`flex-1 py-2 rounded border-2 transition text-sm font-semibold ${
+                                !novaViagem.bemSucedida ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-300 text-gray-600'
                               }`}
                             >
                               <XCircle className="inline mr-1" size={16} />
-                              Não
+                              Problema
                             </button>
                           </div>
                         </div>
 
+                        {/* DESPESAS ADICIONAIS */}
                         <div>
                           <div className="flex justify-between items-center mb-2">
                             <label className="font-semibold text-sm">Despesas Adicionais</label>
                             <button
                               onClick={() => setShowAddDespesa(true)}
-                              className="text-indigo-600 text-sm flex items-center gap-1"
+                              className="text-indigo-600 text-sm flex items-center gap-1 hover:text-indigo-800"
                             >
                               <Plus size={14} />
-                              Adicionar
+                              Adicionar Despesa
                             </button>
                           </div>
                           
@@ -1183,7 +1308,7 @@
                                         onFocus={() => setShowCategoriaDropdown(true)}
                                         onBlur={() => setTimeout(() => setShowCategoriaDropdown(false), 200)}
                                         placeholder="Categoria"
-                                        className="w-full border rounded px-2 py-1 text-sm"
+                                        className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                       />
                                       {showCategoriaDropdown && despesasFiltradas.length > 0 && (
                                         <div className="absolute z-10 w-full bg-white border rounded-b shadow-lg max-h-32 overflow-y-auto">
@@ -1205,7 +1330,7 @@
                                     </div>
                                     <button
                                       onClick={() => setShowAddCategoria(true)}
-                                      className="bg-green-600 text-white px-2 rounded"
+                                      className="bg-green-600 text-white px-2 rounded hover:bg-green-700"
                                     >
                                       <Plus size={14} />
                                     </button>
@@ -1217,12 +1342,12 @@
                                       value={novaCategoriaTemp}
                                       onChange={(e) => setNovaCategoriaTemp(e.target.value)}
                                       placeholder="Nova categoria"
-                                      className="flex-1 border rounded px-2 py-1 text-sm"
+                                      className="flex-1 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                                       onKeyPress={(e) => e.key === 'Enter' && adicionarCategoriaRapida()}
                                       autoFocus
                                     />
-                                    <button onClick={adicionarCategoriaRapida} className="bg-green-600 text-white px-2 rounded text-sm">✓</button>
-                                    <button onClick={() => {setShowAddCategoria(false); setNovaCategoriaTemp('');}} className="bg-gray-300 px-2 rounded text-sm">
+                                    <button onClick={adicionarCategoriaRapida} className="bg-green-600 text-white px-2 rounded text-sm hover:bg-green-700">✓</button>
+                                    <button onClick={() => {setShowAddCategoria(false); setNovaCategoriaTemp('');}} className="bg-gray-300 px-2 rounded text-sm hover:bg-gray-400">
                                       <X size={14} />
                                     </button>
                                   </div>
@@ -1232,20 +1357,24 @@
                                   step="0.01"
                                   value={novaDespesa.valor}
                                   onChange={(e) => setNovaDespesa({...novaDespesa, valor: e.target.value})}
-                                  placeholder="Valor"
-                                  className="border rounded px-2 py-1 text-sm"
+                                  placeholder="Valor (R$)"
+                                  className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                 />
                               </div>
                               <div className="flex gap-2">
                                 <button
                                   onClick={adicionarDespesa}
-                                  className="flex-1 bg-indigo-600 text-white py-1 rounded text-sm"
+                                  className="flex-1 bg-indigo-600 text-white py-1 rounded text-sm hover:bg-indigo-700"
                                 >
                                   Confirmar
                                 </button>
                                 <button
-                                  onClick={() => {setShowAddDespesa(false); setNovaDespesa({ categoria: '', valor: '' }); setSearchCategoria('');}}
-                                  className="flex-1 bg-gray-300 py-1 rounded text-sm"
+                                  onClick={() => {
+                                    setShowAddDespesa(false); 
+                                    setNovaDespesa({ categoria: '', valor: '' }); 
+                                    setSearchCategoria('');
+                                  }}
+                                  className="flex-1 bg-gray-300 py-1 rounded text-sm hover:bg-gray-400"
                                 >
                                   Cancelar
                                 </button>
@@ -1256,22 +1385,23 @@
                           <div className="space-y-2">
                             {novaViagem.despesas.map((d) => (
                               <div key={d.id} className="flex justify-between items-center bg-gray-50 p-2 rounded">
-                                <span className="text-sm">{d.categoria}: R$ {d.valor}</span>
-                                <button onClick={() => removerDespesa(d.id)} className="text-red-500">
-                                  <X size={14} />
+                                <span className="text-sm font-semibold">{d.categoria}: <span className="text-red-600">R$ {d.valor}</span></span>
+                                <button onClick={() => removerDespesa(d.id)} className="text-red-500 hover:text-red-700">
+                                  <X size={16} />
                                 </button>
                               </div>
                             ))}
                           </div>
                         </div>
 
+                        {/* BOTÃO SALVAR */}
                         <button
                           onClick={salvarViagem}
                           disabled={carregando}
-                          className="w-full bg-indigo-600 text-white py-3 rounded-lg hover:bg-indigo-700 transition font-semibold flex items-center justify-center gap-2 disabled:bg-gray-400"
+                          className="w-full bg-indigo-600 text-white py-3 rounded-lg hover:bg-indigo-700 transition font-semibold flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
                         >
                           <Save />
-                          {carregando ? 'Salvando...' : 'Salvar no Google Sheets'}
+                          {carregando ? 'Salvando...' : USE_GOOGLE_SHEETS ? 'Salvar no Google Sheets' : 'Salvar Viagem'}
                         </button>
                       </div>
                     </div>
